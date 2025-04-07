@@ -27,14 +27,14 @@ wheels/
 #.env
 
 # Arquivos de vídeo
-videos/
-*.mp4
-*.avi
-*.mov
-*.m4v
-*.wmv
-*.flv
-*.mkv
+#videos/
+#*.mp4
+#*.avi
+#*.mov
+#*.m4v
+#*.wmv
+#*.flv
+#*.mkv
 
 # Arquivos de transcrição
 *.srt

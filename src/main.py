@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description='Automatizador de Vídeos para Redes Sociais')
     parser.add_argument('--input', required=True, help='Arquivo com URLs dos vídeos')
     parser.add_argument('--skip-download', action='store_true', help='Pular etapa de download')
-    parser.add_argument('--skip-transcribe', action='store_true', help='Pular etapa de transcrição')
+    parser.add_argument('--skip-transcription', action='store_true', help='Pular etapa de transcrição')
     parser.add_argument('--skip-edit', action='store_true', help='Pular etapa de edição')
     parser.add_argument('--skip-upload', action='store_true', help='Pular etapa de upload')
     args = parser.parse_args()
@@ -32,11 +32,15 @@ def main():
         if not args.skip_download:
             logger.info("Iniciando download dos vídeos")
             download_videos(args.input, config)
+        else:
+            logger.info("Pulando etapa de download")
         
         # Transcrição dos vídeos
-        if not args.skip_transcribe:
+        if not args.skip_transcription:
             logger.info("Iniciando transcrição dos vídeos")
             transcribe_videos(config)
+        else:
+            logger.info("Pulando etapa de transcrição")
         
         # Edição dos vídeos
         if not args.skip_edit:
@@ -47,6 +51,8 @@ def main():
         if not args.skip_upload:
             logger.info("Iniciando upload dos vídeos")
             upload_videos(config)
+        else:
+            logger.info("Pulando etapa de upload")
         
         logger.info("Processo concluído com sucesso!")
     

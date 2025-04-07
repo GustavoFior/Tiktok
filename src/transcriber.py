@@ -5,118 +5,101 @@ from utils import setup_logging, load_config, generate_safe_filename
 import logging
 import json
 import time
+import srt
+from datetime import timedelta
+import re
 
 logger = logging.getLogger(__name__)
 
 def transcribe_videos(config):
-    """Transcreve os vídeos da pasta de origem para a pasta de transcrições."""
+    """Transcreve os vídeos baixados"""
+    logger.info("Iniciando transcrição dos vídeos")
+    
+    # Carrega o modelo Whisper
+    model = whisper.load_model(config["transcription"]["model"])
+    
+    # Diretório dos vídeos originais
     input_dir = config["paths"]["input_dir"]
-    transcript_dir = config["paths"]["transcript_dir"]
-    os.makedirs(transcript_dir, exist_ok=True)
     
-    # Carrega o modelo Whisper (usando o modelo medium para melhor qualidade)
-    logger.info("Carregando modelo Whisper...")
-    start_time = time.time()
-    model = whisper.load_model("medium")
-    logger.info(f"Modelo carregado em {time.time() - start_time:.2f} segundos")
-    
-    translator = Translator()
-    
+    # Processa cada vídeo
     for filename in os.listdir(input_dir):
-        if filename.endswith((".mp4", ".avi", ".mov")):
-            input_path = os.path.join(input_dir, filename)
-            # Remove a extensão do arquivo para gerar o nome base
-            base_filename = os.path.splitext(filename)[0]
-            safe_filename = generate_safe_filename(base_filename)
+        if filename.endswith(".mp4"):
+            video_path = os.path.join(input_dir, filename)
+            base_name = os.path.splitext(filename)[0]
             
-            logger.info(f"Iniciando transcrição do vídeo: {filename}")
+            logger.info(f"Transcrevendo vídeo: {filename}")
             
             try:
                 # Primeiro, detecta a língua original
-                logger.info("Carregando áudio...")
-                audio = whisper.load_audio(input_path)
+                logger.info("Detectando língua...")
+                audio = whisper.load_audio(video_path)
                 audio = whisper.pad_or_trim(audio)
                 mel = whisper.log_mel_spectrogram(audio).to(model.device)
-                
-                # Detecta a língua
-                logger.info("Detectando língua...")
                 _, probs = model.detect_language(mel)
                 detected_lang = max(probs, key=probs.get)
                 logger.info(f"Língua detectada: {detected_lang}")
                 
-                # Transcreve na língua original com segmentos
-                logger.info("Iniciando transcrição...")
-                options = whisper.DecodingOptions(
-                    fp16=False,
-                    language=detected_lang,
+                # Transcreve com word_timestamps para melhor precisão
+                result = model.transcribe(
+                    video_path,
                     task="transcribe",
+                    language=detected_lang,
+                    verbose=True,
+                    initial_prompt="Este é um vídeo do YouTube. A transcrição deve começar quando o áudio começar. Não ignore o início do vídeo.",
+                    word_timestamps=True,
+                    condition_on_previous_text=False,
                     temperature=0.0,  # Menos criatividade, mais precisão
                     best_of=3,  # Tenta 3 vezes e pega o melhor resultado
-                    beam_size=3  # Usa beam search para melhor qualidade
+                    beam_size=3,  # Usa beam search para melhor qualidade
+                    no_speech_threshold=0.3  # Ajusta sensibilidade para detecção de fala
                 )
-                start_time = time.time()
-                result = model.transcribe(input_path, **options.__dict__)
-                logger.info(f"Transcrição concluída em {time.time() - start_time:.2f} segundos")
                 
-                # Salva a transcrição original com timing
-                transcript_data = {
-                    "language": detected_lang,
-                    "segments": result["segments"],
-                    "text": result["text"]
-                }
-                
-                # Salva o arquivo JSON com a transcrição original
-                json_path = os.path.join(transcript_dir, f"{safe_filename}.json")
+                # Gera arquivo JSON com os segmentos
+                json_path = os.path.join(input_dir, f"{base_name}.json")
                 with open(json_path, "w", encoding="utf-8") as f:
-                    json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+                    json.dump(result, f, ensure_ascii=False, indent=2)
                 
-                # Traduz cada segmento para português
-                logger.info("Iniciando tradução...")
-                translated_segments = []
-                for i, segment in enumerate(result["segments"], 1):
-                    text = segment["text"].strip()
-                    if not text:  # Pula segmentos vazios
-                        continue
-                        
-                    if detected_lang != 'pt':
-                        try:
-                            # Tenta traduzir o segmento
-                            translated = translator.translate(
-                                text, 
-                                dest='pt',
-                                src=detected_lang
-                            )
-                            translated_text = translated.text
-                        except Exception as e:
-                            logger.warning(f"Erro ao traduzir segmento: {str(e)}")
-                            translated_text = text
-                    else:
-                        translated_text = text
-                    
-                    translated_segments.append({
-                        "start": segment["start"],
-                        "end": segment["end"],
-                        "text": translated_text
-                    })
-                    
-                    if i % 10 == 0:  # Log a cada 10 segmentos
-                        logger.info(f"Traduzidos {i} segmentos...")
-                
-                # Salva a transcrição traduzida em formato SRT
-                logger.info("Salvando arquivo SRT...")
-                srt_path = os.path.join(transcript_dir, f"{safe_filename}.srt")
+                # Gera arquivo SRT com legendas quebradas de forma inteligente
+                srt_path = os.path.join(input_dir, f"{base_name}.srt")
                 with open(srt_path, "w", encoding="utf-8") as f:
-                    for i, segment in enumerate(translated_segments, 1):
-                        start_time = format_time(segment["start"])
-                        end_time = format_time(segment["end"])
-                        f.write(f"{i}\n")
-                        f.write(f"{start_time} --> {end_time}\n")
-                        f.write(f"{segment['text']}\n\n")
+                    subtitle_index = 1
+                    
+                    for segment in result["segments"]:
+                        text = segment["text"].strip()
+                        words = text.split()
+                        
+                        # Lista de pontuações que indicam fim de frase
+                        sentence_enders = ['.', '!', '?', '...', ';', ':']
+                        
+                        current_sentence = ""
+                        current_start = segment["start"]
+                        current_end = segment["end"]
+                        
+                        for i, word in enumerate(words):
+                            current_sentence += word + " "
+                            
+                            # Verifica se a palavra atual termina com um marcador de fim de frase
+                            # ou se é a última palavra do segmento
+                            if (any(word.endswith(ender) for ender in sentence_enders) or 
+                                i == len(words) - 1):
+                                
+                                # Formata o tempo no formato SRT
+                                start = timedelta(seconds=current_start)
+                                end = timedelta(seconds=current_end)
+                                start_time = f"{start.seconds//3600:02d}:{(start.seconds//60)%60:02d}:{start.seconds%60:02d},{int(start.microseconds/1000):03d}"
+                                end_time = f"{end.seconds//3600:02d}:{(end.seconds//60)%60:02d}:{end.seconds%60:02d},{int(end.microseconds/1000):03d}"
+                                
+                                f.write(f"{subtitle_index}\n{start_time} --> {end_time}\n{current_sentence.strip()}\n\n")
+                                
+                                # Reseta para próxima legenda
+                                subtitle_index += 1
+                                current_sentence = ""
+                                current_start = current_end
                 
-                logger.info(f"Processo completo concluído para: {filename}")
+                logger.info(f"Transcrição concluída para {filename}")
                 
             except Exception as e:
-                logger.error(f"Erro ao transcrever vídeo {filename}: {str(e)}")
+                logger.error(f"Erro ao transcrever {filename}: {str(e)}")
                 continue
 
 def format_time(seconds):
