@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ambiente virtual
+#venv/
+#ENV/
+#env/
+#.env
+
+# Arquivos de vídeo
+videos/
+*.mp4
+*.avi
+*.mov
+*.m4v
+*.wmv
+*.flv
+*.mkv
+
+# Arquivos de transcrição
+*.srt
+*.json
+*.txt
+
+# Logs
+*.log
+logs/
+
+# IDEs e editores
+.idea/
+#.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Arquivos temporários
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Arquivos de configuração local
+#config_local.py
+#credentials.json
+#client_secrets.json 
